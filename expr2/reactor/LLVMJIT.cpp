@@ -182,7 +182,15 @@ JITGlobals *JITGlobals::get()
 
 		// Retrieve host CPU name and sub-target features and add them to builder.
 		// Relocation model, code model and codegen opt level are kept to default values.
-		auto cpuFeatures = llvm::sys::getHostCPUFeatures();
+		llvm::StringMap<bool> cpuFeatures;
+		bool ok = llvm::sys::getHostCPUFeatures(cpuFeatures);
+
+#if defined(__i386__) || defined(__x86_64__) || \
+    (defined(__linux__) && (defined(__arm__) || defined(__aarch64__)))
+		ASSERT_MSG(ok, "llvm::sys::getHostCPUFeatures returned false");
+#else
+		(void)ok;  // getHostCPUFeatures always returns false on other platforms
+#endif
 
 		for(auto &feature : cpuFeatures)
 		{
