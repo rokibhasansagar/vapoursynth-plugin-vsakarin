@@ -16,8 +16,6 @@
 
 #include "CPUID.hpp"
 #include "Debug.hpp"
-#include "EmulatedIntrinsics.hpp"
-#include "OptimalIntrinsics.hpp"
 #include "LLVMReactorDebugInfo.hpp"
 #include "Print.hpp"
 #include "Reactor.hpp"
@@ -26,16 +24,9 @@
 
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicsX86.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include <llvm/IR/Module.h>
-#include "llvm/IR/Verifier.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/ManagedStatic.h"
-#if LLVM_VERSION_MAJOR < 15
-#include "llvm/Transforms/Coroutines.h"
-#endif
-#include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/Scalar.h"
 
 #include <fstream>
 #include <iostream>
@@ -3558,24 +3549,16 @@ template<typename FloatT>
 RValue<FloatT> Sin(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::sin, { V(v.value())->getType() });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, V(v.value()))));
-#else
-	return optimal::Sin(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Cos(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::cos, { V(v.value())->getType() });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, V(v.value()))));
-#else
-	return optimal::Cos(v);
-#endif
 }
 
 template<typename FloatT>
@@ -3603,105 +3586,68 @@ template<typename FloatT>
 RValue<FloatT> Asin(RValue<FloatT> v, Precision p)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "asinf");
-#else
-	return optimal::Asin_8_terms(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Acos(RValue<FloatT> v, Precision p)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "acosf");
-#else
-	return optimal::Acos_8_terms(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Atan(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "atanf");
-#else
-	return optimal::Atan(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Sinh(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
-	return emulated::Sinh(v);
-#else
-	return optimal::Sinh(v);
-#endif
+	return ScalarizeCall(sinhf, v);
 }
 
 template<typename FloatT>
 RValue<FloatT> Cosh(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
-	return emulated::Cosh(v);
-#else
-	return optimal::Cosh(v);
-#endif
+	return ScalarizeCall(coshf, v);
 }
 
 template<typename FloatT>
 RValue<FloatT> Tanh(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "tanhf");
-#else
-	return optimal::Tanh(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Asinh(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "asinhf");
-#else
-	return optimal::Asinh(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Acosh(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "acoshf");
-#else
-	return optimal::Acosh(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Atanh(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	return TransformFloatTPerElement(v, "atanhf");
-#else
-	return optimal::Atanh(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Atan2(RValue<FloatT> x, RValue<FloatT> y)
 {
-#ifdef RR_PRECISE
 	RR_DEBUG_INFO_UPDATE_LOC();
 	llvm::SmallVector<llvm::Type *, 2> paramTys;
 	paramTys.push_back(T(Float::type()));
@@ -3716,21 +3662,14 @@ RValue<FloatT> Atan2(RValue<FloatT> x, RValue<FloatT> y)
 		out = V(Nucleus::createInsertElement(V(out), V(el), i));
 	}
 	return RValue<FloatT>(V(out));
-#else
-	return optimal::Atan2(x, y);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Pow(RValue<FloatT> x, RValue<FloatT> y)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::pow, { T(FloatT::type()) });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, { V(x.value()), V(y.value()) })));
-#else
-	return optimal::Pow(x, y);
-#endif
 }
 
 template<typename FloatT>
@@ -3745,48 +3684,32 @@ template<typename FloatT>
 RValue<FloatT> Exp(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::exp, { T(FloatT::type()) });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, V(v.value()))));
-#else
-	return optimal::Exp(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Log(RValue<FloatT> v)
 {
-#ifdef RR_PRECISE
 	RR_DEBUG_INFO_UPDATE_LOC();
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::log, { T(FloatT::type()) });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, V(v.value()))));
-#else
-	return optimal::Log(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Exp2(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::exp2, { T(FloatT::type()) });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, V(v.value()))));
-#else
-	return optimal::Exp2(v);
-#endif
 }
 
 template<typename FloatT>
 RValue<FloatT> Log2(RValue<FloatT> v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-#ifdef RR_PRECISE
 	auto func = llvm::Intrinsic::getDeclaration(jit->module.get(), llvm::Intrinsic::log2, { T(FloatT::type()) });
 	return RValue<FloatT>(V(jit->builder->CreateCall(func, V(v.value()))));
-#else
-	return optimal::Log2(v);
-#endif
 }
 
 #define INSTANTIATE_FUNCS(FloatT) \
@@ -3992,7 +3915,7 @@ RValue<Int8> RoundInt(RValue<Float8> cast)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 #if defined(__i386__) || defined(__x86_64__)
-	if(CPUID::supportsAVX())
+	if(CPUID::supportsAVX2())
 		return x86::cvtps2dq(cast);
 #endif
 	return As<Int8>(V(lowerRoundInt(V(cast.value()), T(Int8::type()))));
@@ -4976,7 +4899,7 @@ RValue<Float8> TryFP16To32(RValue<UShort8> x, bool &ok)
 	ok = false;
 #if (defined(__i386__) || defined(__x86_64__)) && LLVM_VERSION_MAJOR < 11
 	// LLVM 11+ removed this intrinsic.
-	if (!CPUID::supportsF16C() || !CPUID::supportsAVX())
+	if (!CPUID::supportsF16C() || !CPUID::supportsAVX2())
 		return res;
 	ok = true;
 	llvm::Value *vx = V(x.value());
@@ -4996,7 +4919,7 @@ RValue<UShort8> TryFP32To16(RValue<Float8> x, bool &ok)
 	UShort8 res = 0;
 	ok = false;
 #if (defined(__i386__) || defined(__x86_64__)) && LLVM_VERSION_MAJOR < 11
-	if (!CPUID::supportsF16C() || !CPUID::supportsAVX())
+	if (!CPUID::supportsF16C() || !CPUID::supportsAVX2())
 		return res;
 	ok = true;
 	llvm::Value *vx = V(x.value());
