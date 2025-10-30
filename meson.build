@@ -1,7 +1,7 @@
 project('Plugin', 'c', 'cpp',
   default_options: ['buildtype=release', 'b_ndebug=if-release', 'c_std=c99', 'cpp_std=c++20'],
   meson_version: '>=0.48.0',
-  version: '1.0.0'
+  version: '1.1.0'
 )
 
 version_h = declare_dependency(
@@ -87,7 +87,7 @@ if use_asmjit
 else
   sources = sources_common + sources_expr2
   incdir += include_directories('expr2/reactor')
-  deps += dependency('llvm', version: ['>= 10.0', '< 21'], method: 'config-tool', static: static_llvm,
+  deps += dependency('llvm', version: ['>= 10.0', '< 22'], method: 'config-tool', static: static_llvm,
     modules: [
       'asmprinter', 'executionengine', 'target', 'orcjit', 'native',
     ])

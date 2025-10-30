@@ -31,6 +31,10 @@ __pragma(warning(push))
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 
+#if LLVM_VERSION_MAJOR >= 21
+	#include "llvm/ExecutionEngine/Orc/SelfExecutorProcessControl.h"
+#endif
+
 #if LLVM_VERSION_MAJOR >= 20
 	#include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 #endif
@@ -41,6 +45,10 @@ __pragma(warning(push))
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
+#if LLVM_VERSION_MAJOR >= 21
+	#include "llvm/TargetParser/Triple.h"
+	#include "llvm/Support/MemoryBuffer.h"
+#endif
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation/MemorySanitizer.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
@@ -746,9 +754,17 @@ public:
 		    return std::move(*p);
 	    }())
 #endif
-	    , objectLayer(session, [this]() {
-		    return std::make_unique<llvm::SectionMemoryManager>(&memoryMapper);
-	    })
+	    , objectLayer(session,
+#if LLVM_VERSION_MAJOR >= 21
+	                   [this](const llvm::MemoryBuffer &) {
+		                   return std::make_unique<llvm::SectionMemoryManager>(&memoryMapper);
+	                   }
+#else
+	                   [this]() {
+		                   return std::make_unique<llvm::SectionMemoryManager>(&memoryMapper);
+	                   }
+#endif
+	    )
 	    , addresses(count)
 	{
 		bool fatalCompileIssue = false;
@@ -870,7 +886,11 @@ JITBuilder::JITBuilder(const rr::Config &config)
     , module(new llvm::Module("", *context))
     , builder(new llvm::IRBuilder<>(*context))
 {
+	#if LLVM_VERSION_MAJOR >= 21
+	module->setTargetTriple(llvm::Triple(LLVM_DEFAULT_TARGET_TRIPLE));
+	#else
 	module->setTargetTriple(LLVM_DEFAULT_TARGET_TRIPLE);
+	#endif
 	module->setDataLayout(JITGlobals::get()->getDataLayout());
 	if (config.getOptimization().getFMF() == Optimization::FMF::FastMath)
 		builder->setFastMathFlags(llvm::FastMathFlags::getFast());
@@ -917,6 +937,32 @@ void JITBuilder::optimize(const rr::Config &cfg)
 	pb.crossRegisterProxies(lam, fam, cgam, mam);
 
 	llvm::ModulePassManager pm;
+
+#if LLVM_VERSION_MAJOR >= 16
+	llvm::OptimizationLevel level;
+	switch(cfg.getOptimization().getLevel())
+	{
+	case rr::Optimization::Level::None: level = llvm::OptimizationLevel::O0; break;
+	case rr::Optimization::Level::Less: level = llvm::OptimizationLevel::O1; break;
+	case rr::Optimization::Level::Default: level = llvm::OptimizationLevel::O2; break;
+	case rr::Optimization::Level::Aggressive: level = llvm::OptimizationLevel::O3; break;
+	default: UNREACHABLE("Unknown Optimization Level %d", int(cfg.getOptimization().getLevel()));
+	}
+
+	if(cfg.getOptimization().getFMF() == Optimization::FMF::FastMath)
+	{
+		for(auto &F : *module)
+		{
+			F.addFnAttr("no-nans-fp-math", "true");
+			F.addFnAttr("no-infs-fp-math", "true");
+			F.addFnAttr("no-signed-zeros-fp-math", "true");
+			F.addFnAttr("unsafe-fp-math", "true");
+			F.addFnAttr("approx-func-fp-math", "true");
+		}
+	}
+
+	pm = pb.buildPerModuleDefaultPipeline(level);
+#else
 	llvm::FunctionPassManager fpm;
 
 	for(auto pass : cfg.getOptimization().getPasses())
@@ -946,6 +992,7 @@ void JITBuilder::optimize(const rr::Config &cfg)
 	{
 		pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(fpm)));
 	}
+#endif
 
 	pm.run(*module, mam);
 }
